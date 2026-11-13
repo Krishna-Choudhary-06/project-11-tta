@@ -1,0 +1,36 @@
+# Python bytecode and local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system state
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# Downloaded datasets and generated model checkpoints
+/data/*
+!/data/.gitkeep
+/models/checkpoints/
+*.pth
+*.pt
+*.ckpt
+/configs/config.yaml
+
+# Generated experiment outputs (keep the compact aggregate table)
+/experiments/baseline_results/
+/experiments/tent_results/
+/experiments/phase3_results/*
+!/experiments/phase3_results/master_results.csv
+*.tmp
+*.log
+/runs/
+/wandb/

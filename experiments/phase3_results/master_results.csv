@@ -1,0 +1,12 @@
+Experiment,Parameter,Accuracy (%),Rolling entropy min,Dominant ratio max,Collapse
+Baseline,Current LR,70.99,0.9786,0.2062,No
+LR sweep,0.0005,71.24,0.9786,0.2062,No
+LR sweep,0.001,71.63,0.9785,0.2062,No
+LR sweep,0.002,72.31,0.9783,0.2062,No
+Biased model,Airplane (classifier bias +3.0),69.38,0.9572,0.2437,No
+Imbalanced,70% airplane,46.64,0.8995,0.3500,No
+Repeated noise,10 passes,71.55,0.9785,0.2062,No
+Batch-size sweep,8,68.87,0.9033,0.3000,No
+Batch-size sweep,16,70.35,0.9607,0.2375,No
+Batch-size sweep,32,70.99,0.9786,0.2062,No
+Batch-size sweep,64,71.17,0.9850,0.1594,No
