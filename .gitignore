@@ -28,6 +28,7 @@ Thumbs.db
 # Generated experiment outputs (keep the compact aggregate table)
 /experiments/baseline_results/
 /experiments/tent_results/
+/experiments/phase4_results/
 /experiments/phase3_results/*
 !/experiments/phase3_results/master_results.csv
 *.tmp

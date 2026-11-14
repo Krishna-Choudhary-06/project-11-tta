@@ -7,7 +7,7 @@ import math
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from torch import nn
@@ -52,6 +52,12 @@ def run_continuous_tent(
     learning_rate: float,
     max_batches: int | None = None,
     experiment_metadata: dict[str, Any] | None = None,
+    adaptation_loss_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    adaptation_fn: Callable[
+        [nn.Module, torch.Tensor, torch.optim.Optimizer],
+        tuple[dict[str, float], torch.Tensor],
+    ] | None = None,
+    objective_name: str = "tent_conditional_entropy",
 ) -> dict[str, Any]:
     """Adapt one model continuously and save one pre-update metrics row per batch.
 
@@ -62,12 +68,17 @@ def run_continuous_tent(
         raise ValueError("max_batches must be greater than zero when provided.")
     if learning_rate <= 0 or not math.isfinite(learning_rate):
         raise ValueError("learning_rate must be finite and greater than zero.")
+    if adaptation_fn is not None and adaptation_loss_fn is not None:
+        raise ValueError("Provide adaptation_fn or adaptation_loss_fn, not both.")
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     total_correct = 0
     total_samples = 0
     adaptation_loss_sum = 0.0
+    conditional_grad_norm_sum = 0.0
+    marginal_grad_norm_sum = 0.0
+    diagnostic_batches = 0
     started_at = time.perf_counter()
     batches_processed = 0
     stream_start = 0
@@ -77,6 +88,9 @@ def run_continuous_tent(
     rolling_probability_sums: deque[tuple[int, list[float]]] = deque(maxlen=5)
     fieldnames = [
         "experiment",
+        "objective",
+        "lambda",
+        "marginal_entropy_weight",
         "batch_number",
         "stream_start_index",
         "stream_end_index",
@@ -84,6 +98,8 @@ def run_continuous_tent(
         "severity",
         "batch_size",
         "adaptation_loss",
+        "conditional_grad_norm",
+        "marginal_grad_norm",
         "conditional_entropy",
         "accuracy_percent",
         "marginal_entropy",
@@ -114,7 +130,21 @@ def run_continuous_tent(
 
             # adapt_batch returns logits from this forward pass, before step().
             # The optimizer and model persist across every loop iteration.
-            adaptation_loss, logits = adapt_batch(model, images, optimizer)
+            adaptation_metrics: dict[str, float] = {}
+            if adaptation_fn is not None:
+                adaptation_metrics, logits = adaptation_fn(
+                    model,
+                    images,
+                    optimizer,
+                )
+                adaptation_loss = adaptation_metrics["loss"]
+            else:
+                adaptation_loss, logits = adapt_batch(
+                    model,
+                    images,
+                    optimizer,
+                    loss_fn=adaptation_loss_fn,
+                )
             metrics = calculate_metrics(logits, labels)
             correct = metrics["accuracy"] * labels.size(0)
             batch_size = labels.size(0)
@@ -156,6 +186,18 @@ def run_continuous_tent(
             severity = getattr(dataset, "severity", "")
             row: dict[str, Any] = {
                 "experiment": experiment,
+                "objective": objective_name,
+                "lambda": adaptation_metrics.get(
+                    "lambda",
+                    (experiment_metadata or {}).get(
+                        "marginal_entropy_weight", ""
+                    ),
+                ),
+                "marginal_entropy_weight": (
+                    (experiment_metadata or {}).get(
+                        "marginal_entropy_weight", ""
+                    )
+                ),
                 "batch_number": batch_number,
                 "stream_start_index": stream_start,
                 "stream_end_index": stream_end - 1,
@@ -163,6 +205,12 @@ def run_continuous_tent(
                 "severity": severity,
                 "batch_size": batch_size,
                 "adaptation_loss": adaptation_loss,
+                "conditional_grad_norm": adaptation_metrics.get(
+                    "conditional_grad_norm", ""
+                ),
+                "marginal_grad_norm": adaptation_metrics.get(
+                    "marginal_grad_norm", ""
+                ),
                 "conditional_entropy": metrics["conditional_entropy"],
                 "accuracy_percent": 100.0 * metrics["accuracy"],
                 "marginal_entropy": metrics["marginal_entropy"],
@@ -224,6 +272,14 @@ def run_continuous_tent(
             total_correct += correct
             total_samples += batch_size
             adaptation_loss_sum += adaptation_loss * batch_size
+            if "conditional_grad_norm" in adaptation_metrics:
+                conditional_grad_norm_sum += adaptation_metrics[
+                    "conditional_grad_norm"
+                ]
+                marginal_grad_norm_sum += adaptation_metrics[
+                    "marginal_grad_norm"
+                ]
+                diagnostic_batches += 1
             batches_processed += 1
             stream_start = stream_end
 
@@ -262,10 +318,22 @@ def run_continuous_tent(
     rolling_collapse = collapse_details(rolling_collapse_start_batch)
     summary = {
         "experiment": experiment,
+        "objective": objective_name,
         "batches_processed": batches_processed,
         "images_processed": total_samples,
         "accuracy_percent": 100.0 * total_correct / total_samples,
         "mean_adaptation_loss": adaptation_loss_sum / total_samples,
+        "mean_conditional_grad_norm": (
+            conditional_grad_norm_sum / diagnostic_batches
+            if diagnostic_batches
+            else None
+        ),
+        "mean_marginal_grad_norm": (
+            marginal_grad_norm_sum / diagnostic_batches
+            if diagnostic_batches
+            else None
+        ),
+        "lambda": (experiment_metadata or {}).get("marginal_entropy_weight"),
         "elapsed_seconds": elapsed_seconds,
         "learning_rate": learning_rate,
         "experiment_metadata": experiment_metadata or {},

@@ -1,6 +1,7 @@
 """Unsupervised test-time adaptation helpers."""
 
 import math
+from collections.abc import Callable
 
 import torch
 from torch import nn
@@ -37,6 +38,7 @@ def adapt_batch(
     model: nn.Module,
     images: torch.Tensor,
     optimizer: Optimizer,
+    loss_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> tuple[float, torch.Tensor]:
     """Adapt on an unlabeled batch and return loss and pre-update logits.
 
@@ -50,7 +52,7 @@ def adapt_batch(
     model.train()
     optimizer.zero_grad(set_to_none=True)
     logits = model(images)
-    loss = entropy_loss(logits)
+    loss = (loss_fn or entropy_loss)(logits)
     if not torch.isfinite(loss):
         raise FloatingPointError("Entropy loss is not finite; skipping TENT update.")
 

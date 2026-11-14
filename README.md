@@ -176,3 +176,59 @@ and 64. Each result gets its own CSV and summary JSON under
 with accuracy, the minimum complete five-batch rolling normalized entropy,
 the maximum rolling dominant-class ratio, and the rolling collapse result for
 all available completed experiments. `--stress all` runs the entire suite.
+
+## Phase 4 marginal-entropy correction
+
+The corrected TENT objective is
+`H(Y|X) - lambda * H(mean_x p(y|x))`. The functions
+`calculate_conditional_entropy`, `calculate_marginal_entropy`, and
+`corrected_entropy_loss` in `phase2_tent/entropy.py` return the two components
+and combined objective. The marginal probabilities remain attached to
+autograd, so the diversity term contributes gradients. The
+`adapt_corrected_batch` function in `phase2_tent/corrected_tent.py` adapts on
+unlabeled images using the same optimizer configuration as original TENT.
+It measures per-batch gradient norms of the conditional term and of the
+weighted negative marginal term separately, before the combined-loss update.
+The CSV stores both norms and lambda on each row; the summary JSON reports
+their stream means. These magnitudes do not indicate whether the two gradient
+directions reinforce or oppose each other.
+Lambda `0` is the original TENT objective. Larger values strengthen the
+batch-level diversity term. Labels are used only for evaluation, never for
+this loss or its gradients.
+
+### Phase 4 lambda and learning-rate experiments
+
+The dedicated runner is
+`experiments/run_lambda_experiments.py`. Every configuration loads a fresh
+copy of the same source checkpoint and optimizer, while keeping corruption
+order, batch size, BN configuration, momentum, and evaluation timing fixed.
+Run the six requested lambda/learning-rate combinations on the changing
+severity-3 stream:
+
+```powershell
+python -m experiments.run_lambda_experiments
+```
+
+Run all six lambda values (`0`, `0.05`, `0.1`, `0.25`, `0.5`, `1.0`) at a
+fixed learning rate of `0.00025`:
+
+```powershell
+python -m experiments.run_lambda_experiments --mode lambda-sweep
+```
+
+Run every combination of those lambdas and learning rates
+(`0.00001`, `0.00005`, `0.0001`, `0.00025`, `0.0005`) with:
+
+```powershell
+python -m experiments.run_lambda_experiments --mode full-grid
+```
+
+The changing Gaussian-noise → motion-blur → fog stream is used by default;
+`--experiment static` selects the repeated Gaussian-noise stream. Add
+`--max-batches 5` for a small smoke run. Mode-specific per-batch CSVs, JSON
+summaries, a comparison table, and four plots (rolling marginal entropy,
+batch accuracy, predicted class distribution, and lambda-versus-accuracy)
+are written under `experiments/phase4_results`, which is excluded from Git.
+The six-run comparisons are in `lambda-sweep_summary.csv` and
+`focused-grid_summary.csv`. The complete 30-configuration grid is available
+with `--mode full-grid`, but should be run after reviewing the focused results.
